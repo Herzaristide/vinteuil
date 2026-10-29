@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # GTK 4.16 et libadwaita 1.7 manquent aux images Ubuntu : tout passe par le
+  # flake, comme en local.
+  tests:
+    name: Clippy et tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: cachix/install-nix-action@v31
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy
+        run: nix develop --command cargo clippy --locked --all-targets -- -D warnings
+      # Xvfb : les tests sur un vrai widget GTK ont besoin d'un écran.
+      - name: Tests
+        run: nix develop --command nix shell nixpkgs#xvfb-run --command xvfb-run -a cargo test --locked
+
+  paquet:
+    name: Paquet Nix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: cachix/install-nix-action@v31
+      - name: Construction
+        run: nix build --print-build-logs
+      - name: Démarrage
+        run: test -x result/bin/vinteuil

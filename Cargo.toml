@@ -1,0 +1,19 @@
+[package]
+name = "vinteuil"
+version = "0.1.0"
+edition = "2021"
+description = "Un pupitre zen pour les partitions LilyPond"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+relm4 = { version = "0.11", default-features = false, features = ["libadwaita", "gnome_47"] }
+adw = { package = "libadwaita", version = "0.9", features = ["v1_7"] }
+gtk = { package = "gtk4", version = "0.11", features = ["v4_16"] }
+rsvg = { package = "librsvg-rebind", version = "0.3" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "1"
+anyhow = "1"
+
+[profile.release]
+lto = "thin"
