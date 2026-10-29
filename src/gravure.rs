@@ -29,7 +29,10 @@ pub struct Erreur {
 
 impl Erreur {
     fn simple(message: impl Into<String>) -> Self {
-        Self { ligne: None, message: message.into() }
+        Self {
+            ligne: None,
+            message: message.into(),
+        }
     }
 }
 
@@ -107,10 +110,13 @@ pub struct Page {
 
 /// Grave le morceau ; rend une page par livre (le plus souvent une seule).
 pub async fn graver(atelier: &Atelier, morceau: &Path, r: &Reglages) -> Result<Vec<Page>, Erreur> {
-    let etabli = atelier.etabli().map_err(|e| Erreur::simple(format!("{e:#}")))?;
+    let etabli = atelier
+        .etabli()
+        .map_err(|e| Erreur::simple(format!("{e:#}")))?;
     let dir = etabli.path();
     let enveloppe_path = dir.join("partition.ly");
-    std::fs::write(&enveloppe_path, enveloppe(morceau, r)).map_err(|e| Erreur::simple(e.to_string()))?;
+    std::fs::write(&enveloppe_path, enveloppe(morceau, r))
+        .map_err(|e| Erreur::simple(e.to_string()))?;
 
     let mut include = std::ffi::OsString::from("--include=");
     include.push(morceau.parent().unwrap_or(Path::new(".")));
@@ -129,7 +135,9 @@ pub async fn graver(atelier: &Atelier, morceau: &Path, r: &Reglages) -> Result<V
         "partition.ly".as_ref(),
     ];
     let sortie = atelier::lancer(&args, dir, &[]).await.map_err(|e| {
-        Erreur::simple(format!("{e:#} : LilyPond est nécessaire pour graver la partition"))
+        Erreur::simple(format!(
+            "{e:#} : LilyPond est nécessaire pour graver la partition"
+        ))
     })?;
     if !sortie.reussi {
         return Err(erreur(&sortie.stderr, morceau));
@@ -148,13 +156,19 @@ pub async fn graver(atelier: &Atelier, morceau: &Path, r: &Reglages) -> Result<V
             .unwrap_or(0)
     });
     if pages.is_empty() {
-        return Err(Erreur::simple("Rien à graver : le morceau ne contient pas de musique"));
+        return Err(Erreur::simple(
+            "Rien à graver : le morceau ne contient pas de musique",
+        ));
     }
     pages
         .iter()
         .map(|p| {
-            let svg = std::fs::read_to_string(p).map(encre_variable).map_err(|e| Erreur::simple(e.to_string()))?;
-            let liens = std::fs::read(p.with_extension("pdf")).map(|pdf| liens(&pdf, morceau)).unwrap_or_default();
+            let svg = std::fs::read_to_string(p)
+                .map(encre_variable)
+                .map_err(|e| Erreur::simple(e.to_string()))?;
+            let liens = std::fs::read(p.with_extension("pdf"))
+                .map(|pdf| liens(&pdf, morceau))
+                .unwrap_or_default();
             Ok(Page { svg, liens })
         })
         .collect()
@@ -176,32 +190,57 @@ pub fn liens(pdf: &[u8], morceau: &Path) -> Vec<Lien> {
     let texte = String::from_utf8_lossy(pdf);
     let nombres = |apres: &str| -> Option<[f64; 4]> {
         let fin = apres.find(']')?;
-        let v: Vec<f64> = apres[..fin].split_whitespace().filter_map(|n| n.parse().ok()).collect();
+        let v: Vec<f64> = apres[..fin]
+            .split_whitespace()
+            .filter_map(|n| n.parse().ok())
+            .collect();
         v.try_into().ok()
     };
-    let Some([_, _, largeur, hauteur]) = texte.split_once("/MediaBox [").and_then(|(_, r)| nombres(r)) else {
+    let Some([_, _, largeur, hauteur]) = texte
+        .split_once("/MediaBox [")
+        .and_then(|(_, r)| nombres(r))
+    else {
         return Vec::new();
     };
     let fichier = morceau.to_string_lossy();
     let mut liens = Vec::new();
     let morceaux = texte.split("/Rect [").skip(1);
     for bloc in morceaux {
-        let (Some([x1, y1, x2, y2]), Some(uri)) = (nombres(bloc), bloc.split_once("/URI (").map(|(_, r)| chaine_pdf(r))) else {
+        let (Some([x1, y1, x2, y2]), Some(uri)) = (
+            nombres(bloc),
+            bloc.split_once("/URI (").map(|(_, r)| chaine_pdf(r)),
+        ) else {
             continue;
         };
-        let Some(cible) = uri.strip_prefix("textedit://") else { continue };
+        let Some(cible) = uri.strip_prefix("textedit://") else {
+            continue;
+        };
         // chemin:ligne:caractère:colonne ; le chemin peut contenir des « : ».
         let mut parties = cible.rsplitn(4, ':');
-        let (_, car, ligne, chemin) = (parties.next(), parties.next(), parties.next(), parties.next());
-        let (Some(car), Some(ligne), Some(chemin)) = (car, ligne, chemin) else { continue };
+        let (_, car, ligne, chemin) = (
+            parties.next(),
+            parties.next(),
+            parties.next(),
+            parties.next(),
+        );
+        let (Some(car), Some(ligne), Some(chemin)) = (car, ligne, chemin) else {
+            continue;
+        };
         let ici = chemin == fichier || Path::new(chemin).file_name() == morceau.file_name();
-        let (Ok(colonne), Ok(ligne)) = (car.parse::<usize>(), ligne.parse::<usize>()) else { continue };
+        let (Ok(colonne), Ok(ligne)) = (car.parse::<usize>(), ligne.parse::<usize>()) else {
+            continue;
+        };
         if !ici || ligne == 0 {
             continue;
         }
         let (bas, haut) = (y1.min(y2), y1.max(y2));
         liens.push(Lien {
-            cadre: [x1.min(x2) / largeur, (hauteur - haut) / largeur, x1.max(x2) / largeur, (hauteur - bas) / largeur],
+            cadre: [
+                x1.min(x2) / largeur,
+                (hauteur - haut) / largeur,
+                x1.max(x2) / largeur,
+                (hauteur - bas) / largeur,
+            ],
             ligne: ligne - 1,
             colonne,
         });
@@ -237,8 +276,12 @@ pub fn erreur(stderr: &str, morceau: &Path) -> Erreur {
         let mut parties = lieu.rsplitn(3, ':');
         let (_colonne, numero, chemin) = (parties.next(), parties.next(), parties.next());
         let numero = numero.and_then(|n| n.parse().ok());
-        let ici = chemin.is_some_and(|c| c == fichier || Path::new(c).file_name() == morceau.file_name());
-        return Erreur { ligne: numero.filter(|_| ici), message: message.trim().to_string() };
+        let ici =
+            chemin.is_some_and(|c| c == fichier || Path::new(c).file_name() == morceau.file_name());
+        return Erreur {
+            ligne: numero.filter(|_| ici),
+            message: message.trim().to_string(),
+        };
     }
     Erreur::simple(atelier::derniere_ligne(stderr))
 }
@@ -248,7 +291,11 @@ mod tests {
     use super::*;
 
     fn reglages() -> Reglages {
-        Reglages { largeur: 150.0, portee: 20.0, police: "Literata".into() }
+        Reglages {
+            largeur: 150.0,
+            portee: 20.0,
+            police: "Literata".into(),
+        }
     }
 
     #[test]
@@ -286,12 +333,24 @@ mod tests {
     #[test]
     fn erreur_avec_ligne() {
         let m = Path::new("/r/Air.ly");
-        let e = erreur("Processing `partition.ly'\n/r/Air.ly:7:12: error: not a note name: cx\n  c4 cx\n", m);
-        assert_eq!(e, Erreur { ligne: Some(7), message: "not a note name: cx".into() });
+        let e = erreur(
+            "Processing `partition.ly'\n/r/Air.ly:7:12: error: not a note name: cx\n  c4 cx\n",
+            m,
+        );
+        assert_eq!(
+            e,
+            Erreur {
+                ligne: Some(7),
+                message: "not a note name: cx".into()
+            }
+        );
         // Une erreur dans l'enveloppe n'a pas de ligne dans le morceau.
         let e = erreur("partition.ly:3:1: error: oups", m);
         assert_eq!(e.ligne, None);
-        assert_eq!(erreur("\n\nquelque chose a mal tourné\n", m).message, "quelque chose a mal tourné");
+        assert_eq!(
+            erreur("\n\nquelque chose a mal tourné\n", m).message,
+            "quelque chose a mal tourné"
+        );
         assert_eq!(e.to_string(), "oups");
     }
 
@@ -304,8 +363,14 @@ mod tests {
         let atelier = Atelier::new().unwrap();
         let etabli = atelier.etabli().unwrap();
         let morceau = etabli.path().join("Essai.ly");
-        std::fs::write(&morceau, "\\header { title = \"Essai\" }\n\\relative c' { c4 d e f | g1 }\n").unwrap();
-        let pages = glib::MainContext::new().block_on(graver(&atelier, &morceau, &reglages())).unwrap();
+        std::fs::write(
+            &morceau,
+            "\\header { title = \"Essai\" }\n\\relative c' { c4 d e f | g1 }\n",
+        )
+        .unwrap();
+        let pages = glib::MainContext::new()
+            .block_on(graver(&atelier, &morceau, &reglages()))
+            .unwrap();
         assert_eq!(pages.len(), 1);
         // 162 mm, en points (arrondis au-dessus par Cairo).
         let svg = &pages[0].svg;
@@ -317,10 +382,14 @@ mod tests {
         liens.sort_by(|a, b| a.cadre[0].total_cmp(&b.cadre[0]));
         let colonnes: Vec<_> = liens.iter().map(|l| (l.ligne, l.colonne)).collect();
         assert_eq!(colonnes, [(1, 15), (1, 18), (1, 20), (1, 22), (1, 26)]);
-        assert!(liens.iter().all(|l| l.cadre[0] < l.cadre[2] && l.cadre[1] < l.cadre[3]));
+        assert!(liens
+            .iter()
+            .all(|l| l.cadre[0] < l.cadre[2] && l.cadre[1] < l.cadre[3]));
 
         std::fs::write(&morceau, "\\relative c' {\n  c4 d\n  cx4\n}\n").unwrap();
-        let e = glib::MainContext::new().block_on(graver(&atelier, &morceau, &reglages())).unwrap_err();
+        let e = glib::MainContext::new()
+            .block_on(graver(&atelier, &morceau, &reglages()))
+            .unwrap_err();
         assert_eq!(e.ligne, Some(3), "{e}");
     }
 

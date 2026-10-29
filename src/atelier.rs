@@ -20,8 +20,12 @@ impl Atelier {
         static ATELIERS: AtomicU32 = AtomicU32::new(0);
         let n = ATELIERS.fetch_add(1, Ordering::Relaxed);
         let dossier = glib::tmp_dir().join(format!("vinteuil-{}-{n}", std::process::id()));
-        std::fs::create_dir_all(&dossier).with_context(|| format!("création de {}", dossier.display()))?;
-        Ok(Self { dossier, compteur: Cell::new(0) })
+        std::fs::create_dir_all(&dossier)
+            .with_context(|| format!("création de {}", dossier.display()))?;
+        Ok(Self {
+            dossier,
+            compteur: Cell::new(0),
+        })
     }
 
     /// Un sous-dossier neuf, pour un seul travail : deux gravures qui se
@@ -63,7 +67,11 @@ pub struct Sortie {
 
 /// Lance `args[0]` dans `cwd`, sans attendre sur la boucle principale.
 pub async fn lancer(args: &[&OsStr], cwd: &Path, env: &[(&str, &str)]) -> Result<Sortie> {
-    let programme = args.first().context("aucun programme")?.to_string_lossy().into_owned();
+    let programme = args
+        .first()
+        .context("aucun programme")?
+        .to_string_lossy()
+        .into_owned();
     let launcher = gio::SubprocessLauncher::new(
         gio::SubprocessFlags::STDOUT_SILENCE | gio::SubprocessFlags::STDERR_PIPE,
     );
@@ -74,7 +82,9 @@ pub async fn lancer(args: &[&OsStr], cwd: &Path, env: &[(&str, &str)]) -> Result
     if glib::find_program_in_path(&programme).is_none() {
         bail!("« {programme} » est introuvable");
     }
-    let process = launcher.spawn(args).with_context(|| format!("lancement de {programme}"))?;
+    let process = launcher
+        .spawn(args)
+        .with_context(|| format!("lancement de {programme}"))?;
     let (_, stderr) = process.communicate_utf8_future(None).await?;
     Ok(Sortie {
         reussi: process.is_successful(),
@@ -89,5 +99,10 @@ pub fn trouver(noms: &[&str]) -> Option<PathBuf> {
 
 /// La dernière ligne qui dit quelque chose : pour un échec sans message clair.
 pub fn derniere_ligne(texte: &str) -> &str {
-    texte.lines().rev().map(str::trim).find(|l| !l.is_empty()).unwrap_or("échec sans message")
+    texte
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("échec sans message")
 }

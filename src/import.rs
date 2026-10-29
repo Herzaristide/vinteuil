@@ -24,7 +24,13 @@ pub enum Format {
     MuseScore,
 }
 
-const MUSESCORE: [&str; 5] = ["mscore", "musescore", "mscore4portable", "musescore4", "mscore3"];
+const MUSESCORE: [&str; 5] = [
+    "mscore",
+    "musescore",
+    "mscore4portable",
+    "musescore4",
+    "mscore3",
+];
 
 impl Format {
     /// Les extensions reconnues, par format.
@@ -33,7 +39,13 @@ impl Format {
         (Format::MusicXml, &["musicxml", "mxl", "xml"]),
         (Format::Midi, &["mid", "midi", "kar"]),
         (Format::Abc, &["abc"]),
-        (Format::MuseScore, &["mscz", "mscx", "gp", "gp3", "gp4", "gp5", "gpx", "ptb", "cap", "capx", "bww", "ove"]),
+        (
+            Format::MuseScore,
+            &[
+                "mscz", "mscx", "gp", "gp3", "gp4", "gp5", "gpx", "ptb", "cap", "capx", "bww",
+                "ove",
+            ],
+        ),
     ];
 
     pub fn detecter(path: &Path) -> Option<Format> {
@@ -63,7 +75,9 @@ pub async fn importer(atelier: &Atelier, recueil: &Recueil, source: &Path) -> Re
     let ly = dir.join("import.ly");
 
     match format {
-        Format::LilyPond => std::fs::copy(source, &ly).map(drop).with_context(|| format!("lecture de {}", source.display()))?,
+        Format::LilyPond => std::fs::copy(source, &ly)
+            .map(drop)
+            .with_context(|| format!("lecture de {}", source.display()))?,
         Format::MusicXml => convertir("musicxml2ly", source, &ly, dir).await?,
         Format::Midi => convertir("midi2ly", source, &ly, dir).await?,
         Format::Abc => convertir("abc2ly", source, &ly, dir).await?,
@@ -72,7 +86,12 @@ pub async fn importer(atelier: &Atelier, recueil: &Recueil, source: &Path) -> Re
                 bail!("MuseScore est nécessaire pour ouvrir ce fichier (paquet « complet » de Vinteuil)");
             };
             let xml = dir.join("import.musicxml");
-            let args: [&OsStr; 4] = [musescore.as_ref(), "-o".as_ref(), xml.as_ref(), source.as_ref()];
+            let args: [&OsStr; 4] = [
+                musescore.as_ref(),
+                "-o".as_ref(),
+                xml.as_ref(),
+                source.as_ref(),
+            ];
             // Sans écran : MuseScore n'ouvre aucune fenêtre.
             let sortie = atelier::lancer(&args, dir, &[("QT_QPA_PLATFORM", "offscreen")]).await?;
             if !sortie.reussi || !xml.exists() {
@@ -83,17 +102,28 @@ pub async fn importer(atelier: &Atelier, recueil: &Recueil, source: &Path) -> Re
     }
 
     let texte = recueil::read(&ly)?;
-    let base = source.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let base = source
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let destination = recueil.nom_libre(&base);
     recueil::write_atomic(&destination, &texte)?;
     Ok(recueil::nom(&destination))
 }
 
 async fn convertir(programme: &str, source: &Path, sortie: &PathBuf, dir: &Path) -> Result<()> {
-    let args: [&OsStr; 4] = [programme.as_ref(), "-o".as_ref(), sortie.as_ref(), source.as_ref()];
+    let args: [&OsStr; 4] = [
+        programme.as_ref(),
+        "-o".as_ref(),
+        sortie.as_ref(),
+        source.as_ref(),
+    ];
     let resultat = atelier::lancer(&args, dir, &[]).await?;
     if !resultat.reussi || !sortie.exists() {
-        bail!("{programme} : {}", atelier::derniere_ligne(&resultat.stderr));
+        bail!(
+            "{programme} : {}",
+            atelier::derniere_ligne(&resultat.stderr)
+        );
     }
     Ok(())
 }
@@ -105,11 +135,20 @@ mod tests {
 
     #[test]
     fn detection_par_extension() {
-        assert_eq!(Format::detecter(Path::new("a/Sonate.MXL")), Some(Format::MusicXml));
+        assert_eq!(
+            Format::detecter(Path::new("a/Sonate.MXL")),
+            Some(Format::MusicXml)
+        );
         assert_eq!(Format::detecter(Path::new("air.mid")), Some(Format::Midi));
         assert_eq!(Format::detecter(Path::new("reel.abc")), Some(Format::Abc));
-        assert_eq!(Format::detecter(Path::new("riff.gp5")), Some(Format::MuseScore));
-        assert_eq!(Format::detecter(Path::new("morceau.ly")), Some(Format::LilyPond));
+        assert_eq!(
+            Format::detecter(Path::new("riff.gp5")),
+            Some(Format::MuseScore)
+        );
+        assert_eq!(
+            Format::detecter(Path::new("morceau.ly")),
+            Some(Format::LilyPond)
+        );
         assert_eq!(Format::detecter(Path::new("sans_extension")), None);
     }
 
@@ -141,10 +180,19 @@ mod tests {
         .unwrap();
 
         let ctx = glib::MainContext::new();
-        assert_eq!(ctx.block_on(importer(&atelier, &recueil, &abc)).unwrap(), "Reel.ly");
+        assert_eq!(
+            ctx.block_on(importer(&atelier, &recueil, &abc)).unwrap(),
+            "Reel.ly"
+        );
         // Un second import du même nom ne remplace pas le premier.
-        assert_eq!(ctx.block_on(importer(&atelier, &recueil, &abc)).unwrap(), "Reel 2.ly");
-        assert_eq!(ctx.block_on(importer(&atelier, &recueil, &xml)).unwrap(), "Air.ly");
+        assert_eq!(
+            ctx.block_on(importer(&atelier, &recueil, &abc)).unwrap(),
+            "Reel 2.ly"
+        );
+        assert_eq!(
+            ctx.block_on(importer(&atelier, &recueil, &xml)).unwrap(),
+            "Air.ly"
+        );
         let air = recueil::read(&recueil.chemin("Air.ly")).unwrap();
         assert_eq!(recueil::titre(&air).as_deref(), Some("Air"));
 

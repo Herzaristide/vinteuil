@@ -106,7 +106,11 @@ impl Etat {
     }
 
     fn recolorer(&self) {
-        let feuille = feuille(&self.encre.borrow(), &self.accent.borrow(), self.visibles.get());
+        let feuille = feuille(
+            &self.encre.borrow(),
+            &self.accent.borrow(),
+            self.visibles.get(),
+        );
         for (area, handle) in self.dessins.borrow().iter() {
             colorer(handle, &feuille);
             area.queue_draw();
@@ -133,12 +137,16 @@ impl Etat {
 
     fn enregistrer(&self) {
         self.redessiner();
-        let Some(fichier) = self.fichier.borrow().clone() else { return };
+        let Some(fichier) = self.fichier.borrow().clone() else {
+            return;
+        };
         let mut a = self.annotations.borrow_mut();
         // Annoter, c'est accepter la mise en page telle qu'elle est.
         a.proportions = self.proportions.borrow().clone();
         if let Err(e) = a.ecrire(&fichier) {
-            (self.rappel)(Evenement::Signaler(format!("Annotations non enregistrées : {e:#}")));
+            (self.rappel)(Evenement::Signaler(format!(
+                "Annotations non enregistrées : {e:#}"
+            )));
         }
     }
 }
@@ -167,7 +175,10 @@ impl Partition {
         let clamp = adw::Clamp::builder().child(&pages).build();
         // Viewport explicite : sans `scroll_to_focus`, la page ne saute pas
         // quand la partition reprend le focus.
-        let viewport = gtk::Viewport::builder().scroll_to_focus(false).child(&clamp).build();
+        let viewport = gtk::Viewport::builder()
+            .scroll_to_focus(false)
+            .child(&clamp)
+            .build();
         let scrolled = gtk::ScrolledWindow::builder()
             .hscrollbar_policy(gtk::PolicyType::Never)
             .vscrollbar_policy(gtk::PolicyType::External)
@@ -216,11 +227,17 @@ impl Partition {
     /// Les flèches, les pages, le début et la fin, en douceur ; l'annulation.
     fn clavier(&self) {
         let keys = gtk::EventControllerKey::new();
-        let (scrolled, animation, etat) = (self.scrolled.clone(), self.defilement.clone(), Rc::downgrade(&self.etat));
+        let (scrolled, animation, etat) = (
+            self.scrolled.clone(),
+            self.defilement.clone(),
+            Rc::downgrade(&self.etat),
+        );
         keys.connect_key_pressed(move |_, key, _, state| {
             use gdk::ModifierType as M;
             if state.contains(M::CONTROL_MASK) {
-                let Some(etat) = etat.upgrade() else { return glib::Propagation::Proceed };
+                let Some(etat) = etat.upgrade() else {
+                    return glib::Propagation::Proceed;
+                };
                 let evenement = match key {
                     gdk::Key::z if !state.contains(M::SHIFT_MASK) => Evenement::Annuler,
                     gdk::Key::Z | gdk::Key::z | gdk::Key::y => Evenement::Refaire,
@@ -235,7 +252,11 @@ impl Partition {
             let adj = scrolled.vadjustment();
             let page = adj.page_size() * 0.85;
             // Depuis la cible en cours : des appuis rapprochés s'additionnent.
-            let depart = if animation.state() == adw::AnimationState::Playing { animation.value_to() } else { adj.value() };
+            let depart = if animation.state() == adw::AnimationState::Playing {
+                animation.value_to()
+            } else {
+                adj.value()
+            };
             let cible = match key {
                 gdk::Key::Down | gdk::Key::j => depart + PAS_FLECHE,
                 gdk::Key::Up | gdk::Key::k => depart - PAS_FLECHE,
@@ -245,7 +266,10 @@ impl Partition {
                 gdk::Key::End => adj.upper(),
                 _ => return glib::Propagation::Proceed,
             };
-            let cible = cible.clamp(adj.lower(), (adj.upper() - adj.page_size()).max(adj.lower()));
+            let cible = cible.clamp(
+                adj.lower(),
+                (adj.upper() - adj.page_size()).max(adj.lower()),
+            );
             animation.set_value_from(adj.value());
             animation.set_value_to(cible);
             animation.reset();
@@ -275,7 +299,11 @@ impl Partition {
 
     /// Montre les pages gravées.
     pub fn afficher(&self, pages: Vec<Page>) -> Result<(), glib::Error> {
-        let feuille = feuille(&self.etat.encre.borrow(), &self.etat.accent.borrow(), self.etat.visibles.get());
+        let feuille = feuille(
+            &self.etat.encre.borrow(),
+            &self.etat.accent.borrow(),
+            self.etat.visibles.get(),
+        );
         let mut dessins = Vec::with_capacity(pages.len());
         let mut proportions = Vec::with_capacity(pages.len());
         let mut liens = Vec::with_capacity(pages.len());
@@ -309,7 +337,9 @@ impl Partition {
     /// Prévient si les traits ont été posés sur une autre mise en page.
     fn verifier_decalage(&self) {
         let proportions = self.etat.proportions.borrow().clone();
-        if self.etat.annotations.borrow().decalees(&proportions) && *self.etat.deja_signale.borrow() != proportions {
+        if self.etat.annotations.borrow().decalees(&proportions)
+            && *self.etat.deja_signale.borrow() != proportions
+        {
             (self.etat.rappel)(Evenement::Signaler(
                 "La mise en page a changé : les traits peuvent être décalés".into(),
             ));
@@ -321,7 +351,9 @@ impl Partition {
     pub fn charger_annotations(&self, morceau: &Path) {
         let fichier = annotations::chemin(morceau);
         let a = Annotations::lire(&fichier).unwrap_or_else(|e| {
-            (self.etat.rappel)(Evenement::Signaler(format!("Annotations illisibles : {e:#}")));
+            (self.etat.rappel)(Evenement::Signaler(format!(
+                "Annotations illisibles : {e:#}"
+            )));
             Annotations::default()
         });
         self.etat.annotations.replace(a);
@@ -335,8 +367,14 @@ impl Partition {
     /// `annuler` : revient sur le dernier changement des traits ; sinon le refait.
     pub fn remonter(&self, annuler: bool) {
         let etat = &self.etat;
-        let (depuis, vers) = if annuler { (&etat.passe, &etat.futur) } else { (&etat.futur, &etat.passe) };
-        let Some(precedent) = depuis.borrow_mut().pop() else { return };
+        let (depuis, vers) = if annuler {
+            (&etat.passe, &etat.futur)
+        } else {
+            (&etat.futur, &etat.passe)
+        };
+        let Some(precedent) = depuis.borrow_mut().pop() else {
+            return;
+        };
         vers.borrow_mut().push(etat.annotations.replace(precedent));
         etat.enregistrer();
     }
@@ -391,10 +429,13 @@ impl Partition {
                 return glib::ControlFlow::Break;
             }
             let maintenant = horloge.frame_time();
-            let ecoule = precedente.replace(Some(maintenant)).map_or(0.0, |p| (maintenant - p) as f64 / 1e6);
+            let ecoule = precedente
+                .replace(Some(maintenant))
+                .map_or(0.0, |p| (maintenant - p) as f64 / 1e6);
             let adj = scrolled.vadjustment();
             let fin = (adj.upper() - adj.page_size()).max(adj.lower());
-            let valeur = (adj.value() + cran as f64 * PAS_DEFILEMENT * ecoule).clamp(adj.lower(), fin);
+            let valeur =
+                (adj.value() + cran as f64 * PAS_DEFILEMENT * ecoule).clamp(adj.lower(), fin);
             adj.set_value(valeur);
             if (cran > 0 && valeur >= fin) || (cran < 0 && valeur <= adj.lower()) {
                 vitesse.set(0);
@@ -425,7 +466,11 @@ impl Partition {
 /// la couleur du thème, la couleur repère des annotations celle de l'accent.
 fn feuille(encre: &str, accent: &str, visibles: bool) -> String {
     let repere = lilypond::REPERE;
-    let annotations = if visibles { format!("fill: {accent}") } else { "fill-opacity: 0".into() };
+    let annotations = if visibles {
+        format!("fill: {accent}")
+    } else {
+        "fill-opacity: 0".into()
+    };
     format!("svg {{ color: {encre}; }}\n[fill=\"{repere}\"] {{ {annotations}; }}\n")
 }
 
@@ -492,24 +537,37 @@ fn page(handle: &rsvg::Handle, index: usize, ratio: f64, etat: &Rc<Etat>) -> gtk
 
 /// Le clic gauche trace, ou annote la note s'il ne glisse pas ; le clic droit gomme.
 fn gestes(area: &gtk::DrawingArea, index: usize, etat: Weak<Etat>) {
-    let drag = gtk::GestureDrag::builder().button(gdk::BUTTON_PRIMARY).build();
+    let drag = gtk::GestureDrag::builder()
+        .button(gdk::BUTTON_PRIMARY)
+        .build();
     drag.connect_drag_begin(glib::clone!(
-        #[strong] etat,
+        #[strong]
+        etat,
         move |g, x, y| {
-            let (Some(etat), Some(area)) = (etat.upgrade(), g.widget()) else { return };
+            let (Some(etat), Some(area)) = (etat.upgrade(), g.widget()) else {
+                return;
+            };
             g.set_state(gtk::EventSequenceState::Claimed);
             // La partition prend le focus : clavier et annulation s'y adressent.
             if let Some(pages) = area.parent() {
                 pages.grab_focus();
             }
             let l = area.width() as f64;
-            etat.en_cours.replace(Some(Trait { page: index, points: vec![[x / l, y / l, pression(g)]] }));
+            etat.en_cours.replace(Some(Trait {
+                page: index,
+                points: vec![[x / l, y / l, pression(g)]],
+            }));
         }
     ));
     drag.connect_drag_update(glib::clone!(
-        #[strong] etat,
+        #[strong]
+        etat,
         move |g, dx, dy| {
-            let (Some(etat), Some(area), Some((x, y))) = (etat.upgrade(), g.widget(), g.start_point()) else { return };
+            let (Some(etat), Some(area), Some((x, y))) =
+                (etat.upgrade(), g.widget(), g.start_point())
+            else {
+                return;
+            };
             let l = area.width() as f64;
             if let Some(t) = etat.en_cours.borrow_mut().as_mut() {
                 t.points.push([(x + dx) / l, (y + dy) / l, pression(g)]);
@@ -518,11 +576,19 @@ fn gestes(area: &gtk::DrawingArea, index: usize, etat: Weak<Etat>) {
         }
     ));
     drag.connect_drag_end(glib::clone!(
-        #[strong] etat,
+        #[strong]
+        etat,
         move |g, _, _| {
             let Some(etat) = etat.upgrade() else { return };
-            let Some(t) = etat.en_cours.take() else { return };
-            let longueur: f64 = t.points.windows(2).map(|p| (p[1][0] - p[0][0]).hypot(p[1][1] - p[0][1])).sum();
+            let Some(t) = etat.en_cours.take() else {
+                return;
+            };
+            let longueur: f64 = t
+                .points
+                .windows(2)
+                .map(|p| (p[1][0] - p[0][0]).hypot(p[1][1] - p[0][1]))
+                .sum();
+            eprintln!("DBG drag_end longueur={longueur}");
             if longueur >= TRACE_MIN {
                 // Annotées, les pages se montrent.
                 if !etat.visibles.get() {
@@ -533,16 +599,22 @@ fn gestes(area: &gtk::DrawingArea, index: usize, etat: Weak<Etat>) {
             } else if let (Some(area), Some((x, y))) = (g.widget(), g.start_point()) {
                 // Un simple clic : on annote la note pointée.
                 area.queue_draw();
-                let maj = g.current_event_state().contains(gdk::ModifierType::SHIFT_MASK);
+                let maj = g
+                    .current_event_state()
+                    .contains(gdk::ModifierType::SHIFT_MASK);
                 (etat.rappel)(Evenement::Annoter(pointe(&etat, index, area, x, y, maj)));
             }
         }
     ));
     area.add_controller(drag);
 
-    let clic = gtk::GestureClick::builder().button(gdk::BUTTON_SECONDARY).build();
+    let clic = gtk::GestureClick::builder()
+        .button(gdk::BUTTON_SECONDARY)
+        .build();
     clic.connect_pressed(move |g, _, x, y| {
-        let (Some(etat), Some(area)) = (etat.upgrade(), g.widget()) else { return };
+        let (Some(etat), Some(area)) = (etat.upgrade(), g.widget()) else {
+            return;
+        };
         (etat.rappel)(Evenement::Gommer(pointe(&etat, index, area, x, y, false)));
     });
     area.add_controller(clic);
@@ -563,15 +635,32 @@ fn pointe(etat: &Etat, index: usize, zone: gtk::Widget, x: f64, y: f64, maj: boo
         .collect();
     liens.sort_by(|a, b| a.0.total_cmp(&b.0));
     let trait_ = etat.annotations.borrow().trait_proche(index, px, py);
-    Pointe { zone, x, y, liens: liens.into_iter().map(|(_, l)| l).collect(), trait_, maj }
+    Pointe {
+        zone,
+        x,
+        y,
+        liens: liens.into_iter().map(|(_, l)| l).collect(),
+        trait_,
+        maj,
+    }
 }
 
 /// Un petit champ à l'endroit cliqué ; `Entrée` le valide.
-pub fn bulle_texte(zone: &gtk::Widget, x: f64, y: f64, indication: &str, valider: impl Fn(String) + 'static) {
-    let entree = gtk::Entry::builder().placeholder_text(indication).width_chars(24).build();
+pub fn bulle_texte(
+    zone: &gtk::Widget,
+    x: f64,
+    y: f64,
+    indication: &str,
+    valider: impl Fn(String) + 'static,
+) {
+    let entree = gtk::Entry::builder()
+        .placeholder_text(indication)
+        .width_chars(24)
+        .build();
     let bulle = bulle(zone, x, y, &entree);
     entree.connect_activate(glib::clone!(
-        #[weak] bulle,
+        #[weak]
+        bulle,
         move |e| {
             let texte = e.text().trim().to_string();
             bulle.popdown();
@@ -582,6 +671,12 @@ pub fn bulle_texte(zone: &gtk::Widget, x: f64, y: f64, indication: &str, valider
     ));
     bulle.popup();
     entree.grab_focus();
+    eprintln!(
+        "DBG bulle visible={} mapped={} focus={}",
+        bulle.is_visible(),
+        bulle.is_mapped(),
+        entree.has_focus()
+    );
 }
 
 fn bulle(zone: &gtk::Widget, x: f64, y: f64, contenu: &impl IsA<gtk::Widget>) -> gtk::Popover {
@@ -609,7 +704,9 @@ fn dessiner_traits(etat: &Etat, index: usize, cr: &cairo::Context, l: f64) {
     if !etat.visibles.get() && etat.en_cours.borrow().is_none() {
         return;
     }
-    let Some((r, g, b)) = rgb(&etat.accent.borrow()) else { return };
+    let Some((r, g, b)) = rgb(&etat.accent.borrow()) else {
+        return;
+    };
     cr.set_source_rgb(r, g, b);
     cr.set_line_cap(cairo::LineCap::Round);
     cr.set_line_join(cairo::LineJoin::Round);
@@ -625,7 +722,13 @@ fn dessiner_traits(etat: &Etat, index: usize, cr: &cairo::Context, l: f64) {
 fn tracer(cr: &cairo::Context, t: &Trait, l: f64) {
     let epaisseur = |p: f64| annotations::EPAISSEUR * l * p;
     if let [p] = t.points.as_slice() {
-        cr.arc(p[0] * l, p[1] * l, epaisseur(p[2]) / 2.0, 0.0, std::f64::consts::TAU);
+        cr.arc(
+            p[0] * l,
+            p[1] * l,
+            epaisseur(p[2]) / 2.0,
+            0.0,
+            std::f64::consts::TAU,
+        );
         let _ = cr.fill();
         return;
     }
@@ -659,7 +762,9 @@ mod tests {
         let mut surface = cairo::ImageSurface::create(cairo::Format::ARgb32, 80, 40).unwrap();
         {
             let cr = cairo::Context::new(&surface).unwrap();
-            handle.render_document(&cr, &rsvg::Rectangle::new(0.0, 0.0, 80.0, 40.0)).unwrap();
+            handle
+                .render_document(&cr, &rsvg::Rectangle::new(0.0, 0.0, 80.0, 40.0))
+                .unwrap();
         }
         let data = surface.data().unwrap();
         // ARGB32 en mémoire, petit-boutiste : B, G, R, A.
@@ -672,8 +777,14 @@ mod tests {
 
     #[test]
     fn la_musique_prend_l_encre_et_les_annotations_l_accent() {
-        assert_eq!(pixels(&feuille("#d9d2c5", "#d4a35f", true)), [[0xd9, 0xd2, 0xc5, 0xff], [0xd4, 0xa3, 0x5f, 0xff]]);
-        assert_eq!(pixels(&feuille("#2a2521", "#8a5a2b", true))[0], [0x2a, 0x25, 0x21, 0xff]);
+        assert_eq!(
+            pixels(&feuille("#d9d2c5", "#d4a35f", true)),
+            [[0xd9, 0xd2, 0xc5, 0xff], [0xd4, 0xa3, 0x5f, 0xff]]
+        );
+        assert_eq!(
+            pixels(&feuille("#2a2521", "#8a5a2b", true))[0],
+            [0x2a, 0x25, 0x21, 0xff]
+        );
         // Masquées, les annotations disparaissent ; la musique reste.
         let [note, annotation] = pixels(&feuille("#2a2521", "#8a5a2b", false));
         assert_eq!((note[3], annotation[3]), (0xff, 0));

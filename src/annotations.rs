@@ -43,7 +43,9 @@ pub fn chemin(morceau: &Path) -> PathBuf {
 impl Annotations {
     pub fn lire(path: &Path) -> Result<Self> {
         match std::fs::read_to_string(path) {
-            Ok(t) => serde_json::from_str(&t).with_context(|| format!("lecture de {}", path.display())),
+            Ok(t) => {
+                serde_json::from_str(&t).with_context(|| format!("lecture de {}", path.display()))
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
             Err(e) => Err(e).with_context(|| format!("lecture de {}", path.display())),
         }
@@ -65,7 +67,11 @@ impl Annotations {
         !self.traits.is_empty()
             && !self.proportions.is_empty()
             && (self.proportions.len() != proportions.len()
-                || self.proportions.iter().zip(proportions).any(|(a, b)| (a - b).abs() > 0.002))
+                || self
+                    .proportions
+                    .iter()
+                    .zip(proportions)
+                    .any(|(a, b)| (a - b).abs() > 0.002))
     }
 
     /// Le trait le plus proche de (x, y) sur `page`, s'il est à portée.
@@ -92,18 +98,28 @@ mod tests {
     use super::*;
 
     fn trait_(page: usize, points: &[(f64, f64)]) -> Trait {
-        Trait { page, points: points.iter().map(|&(x, y)| [x, y, 1.0]).collect() }
+        Trait {
+            page,
+            points: points.iter().map(|&(x, y)| [x, y, 1.0]).collect(),
+        }
     }
 
     #[test]
     fn chemin_a_cote_du_morceau() {
-        assert_eq!(chemin(Path::new("/r/Air.ly")), PathBuf::from("/r/Air.annotations.json"));
+        assert_eq!(
+            chemin(Path::new("/r/Air.ly")),
+            PathBuf::from("/r/Air.annotations.json")
+        );
     }
 
     #[test]
     fn le_trait_le_plus_proche() {
         let a = Annotations {
-            traits: vec![trait_(0, &[(0.1, 0.1), (0.2, 0.1)]), trait_(0, &[(0.5, 0.5)]), trait_(1, &[(0.1, 0.1)])],
+            traits: vec![
+                trait_(0, &[(0.1, 0.1), (0.2, 0.1)]),
+                trait_(0, &[(0.5, 0.5)]),
+                trait_(1, &[(0.1, 0.1)]),
+            ],
             ..Default::default()
         };
         // Trop loin de tout.
@@ -116,7 +132,10 @@ mod tests {
 
     #[test]
     fn decalage_de_la_mise_en_page() {
-        let mut a = Annotations { proportions: vec![1.5], ..Default::default() };
+        let mut a = Annotations {
+            proportions: vec![1.5],
+            ..Default::default()
+        };
         // Sans annotation, rien à signaler.
         assert!(!a.decalees(&[2.0]));
         a.traits.push(trait_(0, &[(0.1, 0.1)]));
@@ -131,11 +150,18 @@ mod tests {
         let path = chemin(&dir.join("Air.ly"));
         assert_eq!(Annotations::lire(&path).unwrap(), Annotations::default());
 
-        let a = Annotations { proportions: vec![1.2], traits: vec![trait_(0, &[(0.1, 0.2)])] };
+        let a = Annotations {
+            proportions: vec![1.2],
+            traits: vec![trait_(0, &[(0.1, 0.2)])],
+        };
         a.ecrire(&path).unwrap();
         assert_eq!(Annotations::lire(&path).unwrap(), a);
         // L'ancien format, avec des textes libres, se lit encore.
-        std::fs::write(&path, r#"{"traits":[],"textes":[{"page":0,"x":0,"y":0,"texte":"4"}]}"#).unwrap();
+        std::fs::write(
+            &path,
+            r#"{"traits":[],"textes":[{"page":0,"x":0,"y":0,"texte":"4"}]}"#,
+        )
+        .unwrap();
         assert!(Annotations::lire(&path).unwrap().traits.is_empty());
         // Tout effacé : le fichier disparaît.
         Annotations::default().ecrire(&path).unwrap();

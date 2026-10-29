@@ -25,8 +25,16 @@ const NOM: &str = "\\annotation";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Edition {
-    Inserer { ligne: usize, colonne: usize, texte: String },
-    Supprimer { ligne: usize, colonne: usize, longueur: usize },
+    Inserer {
+        ligne: usize,
+        colonne: usize,
+        texte: String,
+    },
+    Supprimer {
+        ligne: usize,
+        colonne: usize,
+        longueur: usize,
+    },
 }
 
 /// Ce qui se trouve à la position d'un lien.
@@ -40,7 +48,9 @@ pub enum Cible {
 }
 
 pub fn cible(source: &str, ligne: usize, colonne: usize) -> Cible {
-    let Some(texte) = source.lines().nth(ligne) else { return Cible::Autre };
+    let Some(texte) = source.lines().nth(ligne) else {
+        return Cible::Autre;
+    };
     let chars: Vec<char> = texte.chars().collect();
     if let Some((texte, _)) = annotation_a(&chars, colonne) {
         return Cible::Annotation(texte);
@@ -52,7 +62,13 @@ pub fn cible(source: &str, ligne: usize, colonne: usize) -> Cible {
 }
 
 /// Les éditions qui attachent `texte` à la note qui commence à cette position.
-pub fn annoter(source: &str, ligne: usize, colonne: usize, dessous: bool, texte: &str) -> Option<Vec<Edition>> {
+pub fn annoter(
+    source: &str,
+    ligne: usize,
+    colonne: usize,
+    dessous: bool,
+    texte: &str,
+) -> Option<Vec<Edition>> {
     let chars: Vec<char> = source.lines().nth(ligne)?.chars().collect();
     let fin = fin_de_note(&chars, colonne)?;
     let direction = if dessous { '_' } else { '^' };
@@ -63,10 +79,20 @@ pub fn annoter(source: &str, ligne: usize, colonne: usize, dessous: bool, texte:
     }];
     if !source.contains(SIGNATURE) {
         // Juste après `\version`, ou tout en haut.
-        let version = source.lines().position(|l| l.trim_start().starts_with("\\version"));
+        let version = source
+            .lines()
+            .position(|l| l.trim_start().starts_with("\\version"));
         let edition = match version {
-            Some(v) => Edition::Inserer { ligne: v + 1, colonne: 0, texte: format!("\n{DEFINITION}") },
-            None => Edition::Inserer { ligne: 0, colonne: 0, texte: format!("{DEFINITION}\n") },
+            Some(v) => Edition::Inserer {
+                ligne: v + 1,
+                colonne: 0,
+                texte: format!("\n{DEFINITION}"),
+            },
+            None => Edition::Inserer {
+                ligne: 0,
+                colonne: 0,
+                texte: format!("{DEFINITION}\n"),
+            },
         };
         editions.push(edition);
     }
@@ -78,12 +104,18 @@ pub fn annoter(source: &str, ligne: usize, colonne: usize, dessous: bool, texte:
 pub fn retirer(source: &str, ligne: usize, colonne: usize) -> Option<Vec<Edition>> {
     let chars: Vec<char> = source.lines().nth(ligne)?.chars().collect();
     let (_, longueur) = annotation_a(&chars, colonne)?;
-    Some(vec![Edition::Supprimer { ligne, colonne, longueur }])
+    Some(vec![Edition::Supprimer {
+        ligne,
+        colonne,
+        longueur,
+    }])
 }
 
 fn position(e: &Edition) -> (usize, usize) {
     match e {
-        Edition::Inserer { ligne, colonne, .. } | Edition::Supprimer { ligne, colonne, .. } => (*ligne, *colonne),
+        Edition::Inserer { ligne, colonne, .. } | Edition::Supprimer { ligne, colonne, .. } => {
+            (*ligne, *colonne)
+        }
     }
 }
 
@@ -94,7 +126,12 @@ pub fn appliquer(source: &str, editions: &[Edition]) -> String {
     for e in editions {
         let (ligne, colonne) = position(e);
         let texte: String = chars.iter().collect();
-        let debut: usize = texte.split('\n').take(ligne).map(|l| l.chars().count() + 1).sum::<usize>() + colonne;
+        let debut: usize = texte
+            .split('\n')
+            .take(ligne)
+            .map(|l| l.chars().count() + 1)
+            .sum::<usize>()
+            + colonne;
         match e {
             Edition::Inserer { texte, .. } => {
                 chars.splice(debut..debut, texte.chars());
@@ -205,7 +242,8 @@ fn fin_d_accord(chars: &[char], colonne: usize) -> Option<usize> {
 mod tests {
     use super::*;
 
-    const MORCEAU: &str = "\\version \"2.24.0\"\n\\relative c' {\n  c4 d8. e16 <c e g>2 | r4 fis'!2 R1*4\n}\n";
+    const MORCEAU: &str =
+        "\\version \"2.24.0\"\n\\relative c' {\n  c4 d8. e16 <c e g>2 | r4 fis'!2 R1*4\n}\n";
 
     fn col(source: &str, ligne: usize, motif: &str) -> usize {
         let l = source.lines().nth(ligne).unwrap();
@@ -218,7 +256,10 @@ mod tests {
         let s = appliquer(MORCEAU, &e);
         assert!(s.contains("d8.^\\annotation \"4e doigt\" e16"), "{s}");
         // La définition vient juste après `\version`.
-        assert!(s.starts_with("\\version \"2.24.0\"\n\n% Vinteuil : \\annotation"), "{s}");
+        assert!(
+            s.starts_with("\\version \"2.24.0\"\n\n% Vinteuil : \\annotation"),
+            "{s}"
+        );
         assert_eq!(s.matches(SIGNATURE).count(), 1);
 
         // Une seconde annotation, en dessous : pas de seconde définition.
@@ -237,7 +278,10 @@ mod tests {
         let e = annoter(MORCEAU, 2, col(MORCEAU, 2, "R1"), false, "tacet").unwrap();
         assert!(appliquer(MORCEAU, &e).contains("R1*4^\\annotation \"tacet\"\n"));
         // `<<` n'est pas un accord, ni `|` une note.
-        assert_eq!(fin_d_accord(&"<< c4 >>".chars().collect::<Vec<_>>(), 3), None);
+        assert_eq!(
+            fin_d_accord(&"<< c4 >>".chars().collect::<Vec<_>>(), 3),
+            None
+        );
         assert_eq!(annoter(MORCEAU, 2, col(MORCEAU, 2, "|"), false, "x"), None);
     }
 
@@ -246,7 +290,10 @@ mod tests {
         let source = "\\relative { é4 c4 }";
         let e = annoter(source, 0, col(source, 0, "c4"), false, "le \"bon\" doigt").unwrap();
         let s = appliquer(source, &e);
-        assert!(s.ends_with("c4^\\annotation \"le \\\"bon\\\" doigt\" }"), "{s}");
+        assert!(
+            s.ends_with("c4^\\annotation \"le \\\"bon\\\" doigt\" }"),
+            "{s}"
+        );
         // Sans `\version`, la définition va tout en haut.
         assert!(s.starts_with("% Vinteuil"));
     }

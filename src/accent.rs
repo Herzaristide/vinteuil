@@ -4,8 +4,8 @@
 
 use std::path::{Path, PathBuf};
 
-use gtk::{gio, glib};
 use gio::prelude::*;
+use gtk::{gio, glib};
 use serde::Deserialize;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,7 +19,10 @@ pub struct Accent {
 impl Default for Accent {
     /// Le cuivre d'Ajar.
     fn default() -> Self {
-        Self { clair: "#8a5a2b".into(), sombre: "#d4a35f".into() }
+        Self {
+            clair: "#8a5a2b".into(),
+            sombre: "#d4a35f".into(),
+        }
     }
 }
 
@@ -42,7 +45,11 @@ fn couleur(s: &str) -> Option<String> {
 pub fn lire(texte: &str) -> Option<Accent> {
     let etat: Etat = serde_json::from_str(texte).ok()?;
     let sombre = couleur(&etat.accent)?;
-    let clair = etat.accent_dark.as_deref().and_then(couleur).unwrap_or_else(|| sombre.clone());
+    let clair = etat
+        .accent_dark
+        .as_deref()
+        .and_then(couleur)
+        .unwrap_or_else(|| sombre.clone());
     Some(Accent { clair, sombre })
 }
 
@@ -60,7 +67,10 @@ pub fn surveiller(path: &Path, changement: impl Fn() + 'static) -> Option<gio::F
     moniteur.connect_changed(move |_, _, _, evenement| {
         use gio::FileMonitorEvent as E;
         // anna écrit puis renomme : on relit une fois le fichier complet.
-        if matches!(evenement, E::ChangesDoneHint | E::Created | E::MovedIn | E::Renamed | E::Deleted) {
+        if matches!(
+            evenement,
+            E::ChangesDoneHint | E::Created | E::MovedIn | E::Renamed | E::Deleted
+        ) {
             changement();
         }
     });
@@ -73,8 +83,16 @@ mod tests {
 
     #[test]
     fn lecture_de_l_etat_d_anna() {
-        let a = lire(r##"{"accent":"#7FA6A0","accent_dark":"#4b6360","mode":"dark","palette":{}}"##).unwrap();
-        assert_eq!(a, Accent { clair: "#4b6360".into(), sombre: "#7fa6a0".into() });
+        let a =
+            lire(r##"{"accent":"#7FA6A0","accent_dark":"#4b6360","mode":"dark","palette":{}}"##)
+                .unwrap();
+        assert_eq!(
+            a,
+            Accent {
+                clair: "#4b6360".into(),
+                sombre: "#7fa6a0".into()
+            }
+        );
         // Sans variante sombre, l'accent sert partout.
         assert_eq!(lire(r##"{"accent":"#c46a5a"}"##).unwrap().clair, "#c46a5a");
         // Ce qui n'est pas une couleur n'entre pas dans la feuille de style.

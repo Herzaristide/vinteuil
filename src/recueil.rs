@@ -38,7 +38,9 @@ impl Recueil {
     /// Ouvre le recueil, ou crée son dossier s'il n'existe pas.
     pub fn open_or_init(root: &Path) -> Result<Self> {
         fs::create_dir_all(root).with_context(|| format!("création de {}", root.display()))?;
-        Ok(Self { root: root.canonicalize()? })
+        Ok(Self {
+            root: root.canonicalize()?,
+        })
     }
 
     pub fn titre(&self) -> String {
@@ -54,7 +56,9 @@ impl Recueil {
 
     /// Les morceaux du dossier, par ordre alphabétique de fichier.
     pub fn morceaux(&self) -> Vec<Morceau> {
-        let Ok(entrees) = fs::read_dir(&self.root) else { return Vec::new() };
+        let Ok(entrees) = fs::read_dir(&self.root) else {
+            return Vec::new();
+        };
         let mut morceaux: Vec<Morceau> = entrees
             .flatten()
             .filter_map(|e| {
@@ -82,7 +86,11 @@ impl Recueil {
     /// `base.ly` dans le recueil, ou `base 2.ly`, `base 3.ly`… s'il est pris.
     pub fn nom_libre(&self, base: &str) -> PathBuf {
         let base = base.replace(['/', '\0'], "-");
-        let base = if base.trim().is_empty() { "Sans titre".to_string() } else { base };
+        let base = if base.trim().is_empty() {
+            "Sans titre".to_string()
+        } else {
+            base
+        };
         (1..)
             .map(|n| match n {
                 1 => self.root.join(format!("{base}.ly")),
@@ -94,21 +102,30 @@ impl Recueil {
 }
 
 pub fn nom(path: &Path) -> String {
-    path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+    path.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 /// Le titre de l'en-tête : le premier `title = "…"`.
 pub fn titre(source: &str) -> Option<String> {
     source.match_indices("title").find_map(|(i, _)| {
         // Pas `subtitle`, ni `my-title`.
-        if source[..i].chars().next_back().is_some_and(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+        if source[..i]
+            .chars()
+            .next_back()
+            .is_some_and(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        {
             return None;
         }
         let reste = source[i + "title".len()..].trim_start().strip_prefix('=')?;
         let reste = reste.trim_start();
         let Some(reste) = reste.strip_prefix('"') else {
             // Un seul mot, sans guillemets (`title = Air`, comme l'écrit musicxml2ly).
-            let mot: String = reste.chars().take_while(|c| c.is_alphanumeric() || *c == '-').collect();
+            let mot: String = reste
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '-')
+                .collect();
             return (!mot.is_empty()).then_some(mot);
         };
         let mut titre = String::new();
@@ -136,7 +153,9 @@ pub fn write_atomic(path: &Path, content: &str) -> Result<()> {
     fs::create_dir_all(dir)?;
     let tmp = dir.join(format!(
         ".{}.tmp",
-        path.file_name().context("chemin sans nom")?.to_string_lossy()
+        path.file_name()
+            .context("chemin sans nom")?
+            .to_string_lossy()
     ));
     let mut f = fs::File::create(&tmp)?;
     f.write_all(content.as_bytes())?;
@@ -157,8 +176,14 @@ mod tests {
 
     #[test]
     fn titre_de_l_en_tete() {
-        assert_eq!(titre("\\header {\n  title = \"Gymnopédie n° 1\"\n}"), Some("Gymnopédie n° 1".into()));
-        assert_eq!(titre("title=\"Le \\\"Coucou\\\"\""), Some("Le \"Coucou\"".into()));
+        assert_eq!(
+            titre("\\header {\n  title = \"Gymnopédie n° 1\"\n}"),
+            Some("Gymnopédie n° 1".into())
+        );
+        assert_eq!(
+            titre("title=\"Le \\\"Coucou\\\"\""),
+            Some("Le \"Coucou\"".into())
+        );
         // `subtitle` n'est pas le titre, ni un titre vide.
         assert_eq!(titre("subtitle = \"Andante\"\ntitle = \"\""), None);
         assert_eq!(titre("\\relative c' { c4 }"), None);
@@ -174,7 +199,10 @@ mod tests {
 
         let premier = r.nouveau().unwrap();
         let second = r.nouveau().unwrap();
-        assert_eq!((premier.as_str(), second.as_str()), ("Sans titre.ly", "Sans titre 2.ly"));
+        assert_eq!(
+            (premier.as_str(), second.as_str()),
+            ("Sans titre.ly", "Sans titre 2.ly")
+        );
         write_atomic(&r.chemin("Air.ly"), "\\header { title = \"Air de Bach\" }").unwrap();
         // Ni les fichiers cachés, ni les autres extensions.
         write_atomic(&r.chemin(".brouillon.ly"), "").unwrap();

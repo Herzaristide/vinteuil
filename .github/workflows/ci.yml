@@ -14,12 +14,14 @@ jobs:
   # GTK 4.16 et libadwaita 1.7 manquent aux images Ubuntu : tout passe par le
   # flake, comme en local.
   tests:
-    name: Clippy et tests
+    name: Linteurs et tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: cachix/install-nix-action@v31
       - uses: Swatinem/rust-cache@v2
+      - name: Formatage
+        run: nix develop --command cargo fmt --check
       - name: Clippy
         run: nix develop --command cargo clippy --locked --all-targets -- -D warnings
       # Xvfb : les tests sur un vrai widget GTK ont besoin d'un écran.

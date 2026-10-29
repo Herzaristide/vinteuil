@@ -15,10 +15,10 @@ use relm4::prelude::*;
 use crate::accent::{self, Accent};
 use crate::atelier::Atelier;
 use crate::config::{Config, State};
+use crate::gravure::Lien;
 use crate::gravure::{self, Erreur};
 use crate::import::{self, Format};
 use crate::lilypond::{self, Cible, Edition};
-use crate::gravure::Lien;
 use crate::partition::{self as surface, Evenement, Partition, Pointe};
 use crate::recueil::{self, Morceau, Recueil};
 
@@ -75,8 +75,16 @@ pub enum Msg {
     /// Ce que demande la partition : un menu, un message, l'annulation…
     Partition(Evenement),
     /// Rattache un texte à la note qui commence là, au-dessus ou en dessous.
-    AnnoterNote { ligne: usize, colonne: usize, dessous: bool, texte: String },
-    RetirerAnnotation { ligne: usize, colonne: usize },
+    AnnoterNote {
+        ligne: usize,
+        colonne: usize,
+        dessous: bool,
+        texte: String,
+    },
+    RetirerAnnotation {
+        ligne: usize,
+        colonne: usize,
+    },
     EffacerTrait(usize),
     MontrerAnnotations,
     /// Le défilement automatique, un cran vers le bas (`1`) ou vers le haut (`-1`).
@@ -152,7 +160,12 @@ impl Component for App {
     }
 
     fn init(init: Init, root: Self::Root, sender: ComponentSender<Self>) -> ComponentParts<Self> {
-        let Init { recueil, morceau, config, state } = init;
+        let Init {
+            recueil,
+            morceau,
+            config,
+            state,
+        } = init;
         load_css(&config);
         let accent_css = gtk::CssProvider::new();
         gtk::style_context_add_provider_for_display(
@@ -168,16 +181,25 @@ impl Component for App {
         let loading = Rc::new(Cell::new(false));
 
         // La partition.
-        let partition = Partition::new(gravure::largeur_page(config.largeur), glib::clone!(
-            #[strong] sender,
-            move |evenement| sender.input(Msg::Partition(evenement))
-        ));
+        let partition = Partition::new(
+            gravure::largeur_page(config.largeur),
+            glib::clone!(
+                #[strong]
+                sender,
+                move |evenement| sender.input(Msg::Partition(evenement))
+            ),
+        );
         partition.zoomer(state.zoom);
-        let zoom_souris = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
+        let zoom_souris =
+            gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
         zoom_souris.connect_scroll(glib::clone!(
-            #[strong] sender,
+            #[strong]
+            sender,
             move |c, _, dy| {
-                if !c.current_event_state().contains(gdk::ModifierType::CONTROL_MASK) {
+                if !c
+                    .current_event_state()
+                    .contains(gdk::ModifierType::CONTROL_MASK)
+                {
                     return glib::Propagation::Proceed;
                 }
                 sender.input(Msg::Zoom(Some(if dy < 0.0 { 1.1 } else { 1.0 / 1.1 })));
@@ -193,7 +215,8 @@ impl Component for App {
             .css_classes(["morceaux"])
             .build();
         liste.connect_row_activated(glib::clone!(
-            #[strong] sender,
+            #[strong]
+            sender,
             move |_, row| sender.input(Msg::Ouvrir(row.widget_name().to_string()))
         ));
         let left_box = panel_box("Morceaux", &recueil.titre());
@@ -211,7 +234,11 @@ impl Component for App {
                 .css_classes(["dim-label", "caption"])
                 .build(),
         );
-        let left = side_revealer(&left_box, gtk::Align::Start, gtk::RevealerTransitionType::SlideRight);
+        let left = side_revealer(
+            &left_box,
+            gtk::Align::Start,
+            gtk::RevealerTransitionType::SlideRight,
+        );
 
         // Le source, à droite.
         let source = gtk::TextView::builder()
@@ -220,7 +247,10 @@ impl Component for App {
             .css_classes(["source"])
             .build();
         source.buffer().set_enable_undo(true);
-        source.buffer().create_tag(Some("erreur"), &[("underline", &gtk::pango::Underline::Error)]);
+        source.buffer().create_tag(
+            Some("erreur"),
+            &[("underline", &gtk::pango::Underline::Error)],
+        );
         let source_titre = gtk::Label::builder()
             .xalign(0.0)
             .ellipsize(gtk::pango::EllipsizeMode::Middle)
@@ -245,16 +275,31 @@ impl Component for App {
                 .build(),
         );
         right_box.append(&erreur);
-        let right = side_revealer(&right_box, gtk::Align::End, gtk::RevealerTransitionType::SlideLeft);
+        let right = side_revealer(
+            &right_box,
+            gtk::Align::End,
+            gtk::RevealerTransitionType::SlideLeft,
+        );
 
         // Les réglages, au centre, du même papier que les panneaux.
         let auto = gtk::Switch::builder().valign(gtk::Align::Center).build();
         let sombre = gtk::Switch::builder().valign(gtk::Align::Center).build();
         let suivre_accent = gtk::Switch::builder().valign(gtk::Align::Center).build();
-        let reglages_box = panel_box("Réglages", "S’appliquent aussitôt, et restent d’une séance à l’autre.");
+        let reglages_box = panel_box(
+            "Réglages",
+            "S’appliquent aussitôt, et restent d’une séance à l’autre.",
+        );
         reglages_box.set_width_request(380);
-        reglages_box.append(&reglage("Suivre le système", "Clair ou sombre, comme le reste du bureau", &auto));
-        reglages_box.append(&reglage("Thème sombre", "L’encre plutôt que le papier · Ctrl+T", &sombre));
+        reglages_box.append(&reglage(
+            "Suivre le système",
+            "Clair ou sombre, comme le reste du bureau",
+            &auto,
+        ));
+        reglages_box.append(&reglage(
+            "Thème sombre",
+            "L’encre plutôt que le papier · Ctrl+T",
+            &sombre,
+        ));
         reglages_box.append(&reglage(
             "Accent du bureau",
             "La couleur choisie dans Karenine, plutôt que le cuivre",
@@ -270,8 +315,10 @@ impl Component for App {
             .build();
 
         source.buffer().connect_changed(glib::clone!(
-            #[strong] sender,
-            #[strong] loading,
+            #[strong]
+            sender,
+            #[strong]
+            loading,
             move |_| {
                 if !loading.get() {
                     sender.input(Msg::Edited);
@@ -291,9 +338,12 @@ impl Component for App {
         // Un fichier déposé sur la fenêtre est importé.
         let depot = gtk::DropTarget::new(gdk::FileList::static_type(), gdk::DragAction::COPY);
         depot.connect_drop(glib::clone!(
-            #[strong] sender,
+            #[strong]
+            sender,
             move |_, valeur, _, _| {
-                let Ok(fichiers) = valeur.get::<gdk::FileList>() else { return false };
+                let Ok(fichiers) = valeur.get::<gdk::FileList>() else {
+                    return false;
+                };
                 let chemins: Vec<_> = fichiers.files().iter().filter_map(|f| f.path()).collect();
                 for chemin in &chemins {
                     sender.input(Msg::Importer(chemin.clone()));
@@ -305,7 +355,8 @@ impl Component for App {
 
         // Les fichiers passés à l'application, au lancement ou plus tard.
         relm4::main_application().connect_open(glib::clone!(
-            #[strong] sender,
+            #[strong]
+            sender,
             move |_, fichiers, _| {
                 for chemin in fichiers.iter().filter_map(|f| f.path()) {
                     sender.input(Msg::Recevoir(chemin));
@@ -315,7 +366,8 @@ impl Component for App {
 
         install_shortcuts(&root, &sender);
         root.connect_close_request(glib::clone!(
-            #[strong] sender,
+            #[strong]
+            sender,
             move |_| {
                 sender.input(Msg::Quit);
                 glib::Propagation::Stop
@@ -328,10 +380,14 @@ impl Component for App {
             "papier" => Some(false),
             _ => None,
         };
-        let moniteur = accent::surveiller(&accent::path(), glib::clone!(
-            #[strong] sender,
-            move || sender.input(Msg::Accent)
-        ));
+        let moniteur = accent::surveiller(
+            &accent::path(),
+            glib::clone!(
+                #[strong]
+                sender,
+                move || sender.input(Msg::Accent)
+            ),
+        );
 
         let mut model = App {
             recueil,
@@ -360,10 +416,26 @@ impl Component for App {
         sombre.set_active(model.dark);
         sombre.set_sensitive(!model.auto);
         suivre_accent.set_active(model.state.accent);
-        auto.connect_active_notify(glib::clone!(#[strong] sender, move |s| sender.input(Msg::SuivreSysteme(s.is_active()))));
-        sombre.connect_active_notify(glib::clone!(#[strong] sender, move |s| sender.input(Msg::Sombre(s.is_active()))));
-        suivre_accent.connect_active_notify(glib::clone!(#[strong] sender, move |s| sender.input(Msg::SuivreAccent(s.is_active()))));
-        adw::StyleManager::default().connect_dark_notify(glib::clone!(#[strong] sender, move |_| sender.input(Msg::Systeme)));
+        auto.connect_active_notify(glib::clone!(
+            #[strong]
+            sender,
+            move |s| sender.input(Msg::SuivreSysteme(s.is_active()))
+        ));
+        sombre.connect_active_notify(glib::clone!(
+            #[strong]
+            sender,
+            move |s| sender.input(Msg::Sombre(s.is_active()))
+        ));
+        suivre_accent.connect_active_notify(glib::clone!(
+            #[strong]
+            sender,
+            move |s| sender.input(Msg::SuivreAccent(s.is_active()))
+        ));
+        adw::StyleManager::default().connect_dark_notify(glib::clone!(
+            #[strong]
+            sender,
+            move |_| sender.input(Msg::Systeme)
+        ));
 
         if model.config.plein_ecran {
             root.fullscreen();
@@ -454,10 +526,13 @@ impl Component for App {
                     Err(e) => return toast(w, &format!("{e:#}")),
                 };
                 self.with_loading(|| w.source.buffer().set_text(&texte));
-                w.source.buffer().place_cursor(&w.source.buffer().start_iter());
+                w.source
+                    .buffer()
+                    .place_cursor(&w.source.buffer().start_iter());
                 w.source_titre.set_label(&fichier);
                 w.erreur.set_visible(false);
-                w.partition.charger_annotations(&self.recueil.chemin(&fichier));
+                w.partition
+                    .charger_annotations(&self.recueil.chemin(&fichier));
                 self.liens_a_jour = false;
                 self.annulables.clear();
                 self.refaisables.clear();
@@ -488,9 +563,14 @@ impl Component for App {
                 let chemin = chemin.canonicalize().unwrap_or(chemin);
                 if chemin.is_dir() {
                     if chemin != self.recueil.root {
-                        toast(w, &format!("Un recueil est déjà ouvert : {}", self.recueil.titre()));
+                        toast(
+                            w,
+                            &format!("Un recueil est déjà ouvert : {}", self.recueil.titre()),
+                        );
                     }
-                } else if chemin.parent() == Some(self.recueil.root.as_path()) && Format::detecter(&chemin) == Some(Format::LilyPond) {
+                } else if chemin.parent() == Some(self.recueil.root.as_path())
+                    && Format::detecter(&chemin) == Some(Format::LilyPond)
+                {
                     sender.input(Msg::Ouvrir(recueil::nom(&chemin)));
                 } else {
                     sender.input(Msg::Importer(chemin));
@@ -503,17 +583,26 @@ impl Component for App {
                 if format != Format::LilyPond {
                     toast(w, &format!("Conversion depuis {}…", format.nom()));
                 }
-                let (atelier, root_recueil, sender) = (self.atelier.clone(), self.recueil.root.clone(), sender.clone());
+                let (atelier, root_recueil, sender) = (
+                    self.atelier.clone(),
+                    self.recueil.root.clone(),
+                    sender.clone(),
+                );
                 glib::spawn_future_local(async move {
                     let recueil = Recueil { root: root_recueil };
-                    let resultat = import::importer(&atelier, &recueil, &chemin).await.map_err(|e| format!("{e:#}"));
+                    let resultat = import::importer(&atelier, &recueil, &chemin)
+                        .await
+                        .map_err(|e| format!("{e:#}"));
                     sender.input(Msg::Importe(resultat));
                 });
             }
             Msg::Importe(resultat) => match resultat {
                 Ok(fichier) => {
                     self.relire(w);
-                    toast(w, &format!("« {} » ajouté au recueil", fichier.trim_end_matches(".ly")));
+                    toast(
+                        w,
+                        &format!("« {} » ajouté au recueil", fichier.trim_end_matches(".ly")),
+                    );
                     sender.input(Msg::Ouvrir(fichier));
                 }
                 Err(e) => toast(w, &format!("Import impossible : {e}")),
@@ -525,9 +614,10 @@ impl Component for App {
                 self.save_generation += 1;
                 let generation = self.save_generation;
                 let sender = sender.clone();
-                glib::timeout_add_local_once(std::time::Duration::from_millis(SAVE_DELAY_MS), move || {
-                    sender.input(Msg::Save(generation))
-                });
+                glib::timeout_add_local_once(
+                    std::time::Duration::from_millis(SAVE_DELAY_MS),
+                    move || sender.input(Msg::Save(generation)),
+                );
             }
             Msg::Save(generation) => {
                 if generation == self.save_generation && self.dirty && self.save(w) {
@@ -545,7 +635,11 @@ impl Component for App {
                     portee: self.config.portee,
                     police: self.config.police.clone(),
                 };
-                let (atelier, chemin, sender) = (self.atelier.clone(), self.recueil.chemin(fichier), sender.clone());
+                let (atelier, chemin, sender) = (
+                    self.atelier.clone(),
+                    self.recueil.chemin(fichier),
+                    sender.clone(),
+                );
                 glib::spawn_future_local(async move {
                     let resultat = gravure::graver(&atelier, &chemin, &reglages).await;
                     sender.input(Msg::Grave(generation, resultat));
@@ -569,7 +663,8 @@ impl Component for App {
                     }
                     // La dernière partition réussie reste affichée.
                     Err(e) => {
-                        if let Some(ligne) = e.ligne.and_then(|l| buffer.iter_at_line(l as i32 - 1)) {
+                        if let Some(ligne) = e.ligne.and_then(|l| buffer.iter_at_line(l as i32 - 1))
+                        {
                             let mut fin = ligne;
                             fin.forward_to_line_end();
                             buffer.apply_tag_by_name("erreur", &ligne, &fin);
@@ -587,7 +682,9 @@ impl Component for App {
             }
 
             Msg::Zoom(facteur) => {
-                let zoom = facteur.map_or(1.0, |f| self.state.zoom * f).clamp(ZOOM_MIN, ZOOM_MAX);
+                let zoom = facteur
+                    .map_or(1.0, |f| self.state.zoom * f)
+                    .clamp(ZOOM_MIN, ZOOM_MAX);
                 if zoom != self.state.zoom {
                     self.state.zoom = zoom;
                     w.partition.zoomer(zoom);
@@ -614,7 +711,16 @@ impl Component for App {
                     self.changer_theme(w, root, if on { None } else { Some(self.dark) });
                     w.sombre.set_sensitive(!on);
                     w.sombre.set_active(self.dark);
-                    self.state.theme = Some(if on { "auto" } else if self.dark { "encre" } else { "papier" }.into());
+                    self.state.theme = Some(
+                        if on {
+                            "auto"
+                        } else if self.dark {
+                            "encre"
+                        } else {
+                            "papier"
+                        }
+                        .into(),
+                    );
                     self.state.save();
                 }
             }
@@ -638,7 +744,13 @@ impl Component for App {
                 Evenement::Annuler => self.remonter(w, &sender, true),
                 Evenement::Refaire => self.remonter(w, &sender, false),
             },
-            Msg::AnnoterNote { ligne, colonne, dessous, texte } => {
+            Msg::AnnoterNote {
+                ligne,
+                colonne,
+                dessous,
+                texte,
+            } => {
+                eprintln!("DBG AnnoterNote {ligne} {colonne} {texte}");
                 let source = texte_de(&w.source);
                 match lilypond::annoter(&source, ligne, colonne, dessous, &texte) {
                     Some(editions) => self.editer(w, &sender, editions),
@@ -655,8 +767,13 @@ impl Component for App {
                 let cran = w.partition.defiler(sens);
                 let texte = match cran {
                     0 => "Défilement arrêté".to_string(),
-                    c if c > 0 => format!("Défilement ↓ {c} · Alt+↑ pour ralentir, Échap pour arrêter"),
-                    c => format!("Défilement ↑ {} · Alt+↓ pour ralentir, Échap pour arrêter", -c),
+                    c if c > 0 => {
+                        format!("Défilement ↓ {c} · Alt+↑ pour ralentir, Échap pour arrêter")
+                    }
+                    c => format!(
+                        "Défilement ↑ {} · Alt+↓ pour ralentir, Échap pour arrêter",
+                        -c
+                    ),
                 };
                 if let Some(ancien) = self.message_defilement.take() {
                     ancien.dismiss();
@@ -667,7 +784,14 @@ impl Component for App {
             }
             Msg::MontrerAnnotations => {
                 let visibles = w.partition.basculer_annotations();
-                toast(w, if visibles { "Annotations visibles" } else { "Annotations masquées · Alt+H" });
+                toast(
+                    w,
+                    if visibles {
+                        "Annotations visibles"
+                    } else {
+                        "Annotations masquées · Alt+H"
+                    },
+                );
             }
             Msg::ToggleFullscreen => root.set_fullscreened(!root.is_fullscreen()),
 
@@ -677,7 +801,10 @@ impl Component for App {
                     self.state.save();
                     relm4::main_application().quit();
                 } else {
-                    toast(w, "Fermeture annulée : le morceau n’a pas pu être enregistré");
+                    toast(
+                        w,
+                        "Fermeture annulée : le morceau n’a pas pu être enregistré",
+                    );
                 }
             }
         }
@@ -695,24 +822,54 @@ impl App {
             return Vec::new();
         }
         let source = texte_de(&w.source);
-        p.liens.iter().map(|l| (l.clone(), lilypond::cible(&source, l.ligne, l.colonne))).collect()
+        p.liens
+            .iter()
+            .map(|l| (l.clone(), lilypond::cible(&source, l.ligne, l.colonne)))
+            .collect()
     }
 
     /// Un clic sur une note : un texte à y rattacher, au-dessus (en dessous avec `Maj`).
     fn annoter(&self, w: &Widgets, p: Pointe, sender: &ComponentSender<Self>) {
-        let Some((note, _)) = self.cibles(w, &p).into_iter().find(|(_, c)| *c == Cible::Note) else { return };
+        eprintln!(
+            "DBG annoter liens_a_jour={} liens={:?} cibles={:?}",
+            self.liens_a_jour,
+            p.liens,
+            self.cibles(w, &p)
+        );
+        let Some((note, _)) = self
+            .cibles(w, &p)
+            .into_iter()
+            .find(|(_, c)| *c == Cible::Note)
+        else {
+            return;
+        };
         let (ligne, colonne, dessous, sender) = (note.ligne, note.colonne, p.maj, sender.clone());
-        let indication = if dessous { "En dessous : doigté, nuance…" } else { "Doigté, nuance, remarque…" };
+        let indication = if dessous {
+            "En dessous : doigté, nuance…"
+        } else {
+            "Doigté, nuance, remarque…"
+        };
         surface::bulle_texte(&p.zone, p.x, p.y, indication, move |texte| {
-            sender.input(Msg::AnnoterNote { ligne, colonne, dessous, texte })
+            sender.input(Msg::AnnoterNote {
+                ligne,
+                colonne,
+                dessous,
+                texte,
+            })
         });
     }
 
     /// Un clic droit : retire l'annotation pointée, sinon efface le trait pointé.
     fn gommer(&self, w: &Widgets, p: Pointe, sender: &ComponentSender<Self>) {
-        let annotation = self.cibles(w, &p).into_iter().find(|(_, c)| matches!(c, Cible::Annotation(_)));
+        let annotation = self
+            .cibles(w, &p)
+            .into_iter()
+            .find(|(_, c)| matches!(c, Cible::Annotation(_)));
         if let Some((lien, _)) = annotation {
-            sender.input(Msg::RetirerAnnotation { ligne: lien.ligne, colonne: lien.colonne });
+            sender.input(Msg::RetirerAnnotation {
+                ligne: lien.ligne,
+                colonne: lien.colonne,
+            });
         } else if let Some(rang) = p.trait_ {
             sender.input(Msg::EffacerTrait(rang));
         }
@@ -726,7 +883,11 @@ impl App {
 
     /// `annuler` : défait la dernière annotation, trait ou texte ; sinon la refait.
     fn remonter(&mut self, w: &Widgets, sender: &ComponentSender<Self>, annuler: bool) {
-        let genre = if annuler { self.annulables.pop() } else { self.refaisables.pop() };
+        let genre = if annuler {
+            self.annulables.pop()
+        } else {
+            self.refaisables.pop()
+        };
         let Some(genre) = genre else { return };
         if annuler {
             self.refaisables.push(genre);
@@ -737,7 +898,13 @@ impl App {
             Genre::Trait => w.partition.remonter(annuler),
             Genre::Texte => {
                 let buffer = w.source.buffer();
-                self.with_loading(|| if annuler { buffer.undo() } else { buffer.redo() });
+                self.with_loading(|| {
+                    if annuler {
+                        buffer.undo()
+                    } else {
+                        buffer.redo()
+                    }
+                });
                 self.enregistrer_et_graver(w, sender);
             }
         }
@@ -751,12 +918,26 @@ impl App {
             buffer.begin_user_action();
             for e in editions {
                 match e {
-                    Edition::Inserer { ligne, colonne, texte } => {
-                        let mut it = buffer.iter_at_line_offset(ligne as i32, colonne as i32).unwrap_or(buffer.end_iter());
+                    Edition::Inserer {
+                        ligne,
+                        colonne,
+                        texte,
+                    } => {
+                        let mut it = buffer
+                            .iter_at_line_offset(ligne as i32, colonne as i32)
+                            .unwrap_or(buffer.end_iter());
                         buffer.insert(&mut it, &texte);
                     }
-                    Edition::Supprimer { ligne, colonne, longueur } => {
-                        let Some(mut debut) = buffer.iter_at_line_offset(ligne as i32, colonne as i32) else { continue };
+                    Edition::Supprimer {
+                        ligne,
+                        colonne,
+                        longueur,
+                    } => {
+                        let Some(mut debut) =
+                            buffer.iter_at_line_offset(ligne as i32, colonne as i32)
+                        else {
+                            continue;
+                        };
                         let mut fin = debut;
                         fin.forward_chars(longueur as i32);
                         buffer.delete(&mut debut, &mut fin);
@@ -789,7 +970,9 @@ impl App {
 
     /// Enregistre le source s'il a changé. Renvoie `false` en cas d'échec.
     fn save(&mut self, w: &Widgets) -> bool {
-        let (true, Some(fichier)) = (self.dirty, &self.courant) else { return true };
+        let (true, Some(fichier)) = (self.dirty, &self.courant) else {
+            return true;
+        };
         let buffer = w.source.buffer();
         let texte = buffer.text(&buffer.start_iter(), &buffer.end_iter(), false);
         match recueil::write_atomic(&self.recueil.chemin(fichier), &texte) {
@@ -818,12 +1001,19 @@ impl App {
             w.liste.remove(&row);
         }
         for m in &self.morceaux {
-            w.liste.append(&morceau_row(m, self.courant.as_deref() == Some(m.fichier.as_str())));
+            w.liste.append(&morceau_row(
+                m,
+                self.courant.as_deref() == Some(m.fichier.as_str()),
+            ));
         }
     }
 
     fn encre(&self) -> &'static str {
-        if self.dark { ENCRE_ENCRE } else { ENCRE_PAPIER }
+        if self.dark {
+            ENCRE_ENCRE
+        } else {
+            ENCRE_PAPIER
+        }
     }
 
     fn changer_theme(&mut self, w: &Widgets, root: &adw::ApplicationWindow, choix: Option<bool>) {
@@ -835,9 +1025,21 @@ impl App {
     /// pour l'interface, et pour les annotations (vif sur l'encre, assombri
     /// sur le papier).
     fn appliquer_accent(&self, partition: &Partition) {
-        let accent = self.state.accent.then(|| accent::bureau(&accent::path())).flatten().unwrap_or_default();
+        let accent = self
+            .state
+            .accent
+            .then(|| accent::bureau(&accent::path()))
+            .flatten()
+            .unwrap_or_default();
         self.accent_css.load_from_string(&css_accent(&accent));
-        partition.couleurs(self.encre(), if self.dark { &accent.sombre } else { &accent.clair });
+        partition.couleurs(
+            self.encre(),
+            if self.dark {
+                &accent.sombre
+            } else {
+                &accent.clair
+            },
+        );
     }
 }
 
@@ -854,7 +1056,11 @@ fn demander_import(root: &adw::ApplicationWindow, sender: &ComponentSender<App>)
     filtres.append(&tous);
     for (format, extensions) in Format::EXTENSIONS {
         let filtre = gtk::FileFilter::new();
-        filtre.set_name(Some(&format!("{} ({})", format.nom(), extensions.join(", "))));
+        filtre.set_name(Some(&format!(
+            "{} ({})",
+            format.nom(),
+            extensions.join(", ")
+        )));
         for ext in extensions {
             filtre.add_suffix(ext);
         }
@@ -911,7 +1117,11 @@ fn morceau_row(m: &Morceau, current: bool) -> gtk::ListBoxRow {
 
 /// Une ligne de réglage : intitulé et explication à gauche, interrupteur à droite.
 fn reglage(titre: &str, detail: &str, interrupteur: &impl IsA<gtk::Widget>) -> gtk::Box {
-    let textes = gtk::Box::builder().orientation(gtk::Orientation::Vertical).spacing(2).hexpand(true).build();
+    let textes = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(2)
+        .hexpand(true)
+        .build();
     textes.append(&gtk::Label::builder().label(titre).xalign(0.0).build());
     textes.append(
         &gtk::Label::builder()
@@ -922,7 +1132,10 @@ fn reglage(titre: &str, detail: &str, interrupteur: &impl IsA<gtk::Widget>) -> g
             .css_classes(["dim-label", "caption"])
             .build(),
     );
-    let ligne = gtk::Box::builder().spacing(18).css_classes(["reglage"]).build();
+    let ligne = gtk::Box::builder()
+        .spacing(18)
+        .css_classes(["reglage"])
+        .build();
     ligne.append(&textes);
     ligne.append(interrupteur);
     ligne
@@ -935,7 +1148,13 @@ fn panel_box(title: &str, subtitle: &str) -> gtk::Box {
         .width_request(300)
         .css_classes(["panneau"])
         .build();
-    b.append(&gtk::Label::builder().label(title).xalign(0.0).css_classes(["heading"]).build());
+    b.append(
+        &gtk::Label::builder()
+            .label(title)
+            .xalign(0.0)
+            .css_classes(["heading"])
+            .build(),
+    );
     if !subtitle.is_empty() {
         b.append(
             &gtk::Label::builder()
@@ -957,7 +1176,11 @@ fn reveler(panneau: &gtk::Revealer, ouvert: bool) {
     panneau.set_can_target(ouvert);
 }
 
-fn side_revealer(child: &gtk::Box, halign: gtk::Align, transition: gtk::RevealerTransitionType) -> gtk::Revealer {
+fn side_revealer(
+    child: &gtk::Box,
+    halign: gtk::Align,
+    transition: gtk::RevealerTransitionType,
+) -> gtk::Revealer {
     gtk::Revealer::builder()
         .child(child)
         .can_target(false)
@@ -1081,5 +1304,7 @@ window.encre  .panneau switch:checked slider {{ background-color: #1b1a18; }}
 
 fn texte_de(view: &gtk::TextView) -> String {
     let buffer = view.buffer();
-    buffer.text(&buffer.start_iter(), &buffer.end_iter(), false).to_string()
+    buffer
+        .text(&buffer.start_iter(), &buffer.end_iter(), false)
+        .to_string()
 }

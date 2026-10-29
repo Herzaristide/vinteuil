@@ -47,7 +47,10 @@ impl Config {
         let path = glib::user_config_dir().join("vinteuil").join("config.toml");
         match std::fs::read_to_string(&path) {
             Ok(t) => toml::from_str(&t).unwrap_or_else(|e| {
-                eprintln!("vinteuil : {} illisible ({e}), préférences par défaut", path.display());
+                eprintln!(
+                    "vinteuil : {} illisible ({e}), préférences par défaut",
+                    path.display()
+                );
                 Self::default()
             }),
             Err(_) => Self::default(),
@@ -72,7 +75,13 @@ pub struct State {
 
 impl Default for State {
     fn default() -> Self {
-        Self { dernier_recueil: None, dernier_morceau: None, theme: None, zoom: 1.0, accent: true }
+        Self {
+            dernier_recueil: None,
+            dernier_morceau: None,
+            theme: None,
+            zoom: 1.0,
+            accent: true,
+        }
     }
 }
 
