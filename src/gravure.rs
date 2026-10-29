@@ -226,7 +226,9 @@ pub fn liens(pdf: &[u8], morceau: &Path) -> Vec<Lien> {
         let (Some(car), Some(ligne), Some(chemin)) = (car, ligne, chemin) else {
             continue;
         };
-        let ici = chemin == fichier || Path::new(chemin).file_name() == morceau.file_name();
+        // Le chemin est encodé : `Mon%20recueil/Allemanda%202.ly`.
+        let chemin = decoder_uri(chemin);
+        let ici = chemin == fichier || Path::new(&chemin).file_name() == morceau.file_name();
         let (Ok(colonne), Ok(ligne)) = (car.parse::<usize>(), ligne.parse::<usize>()) else {
             continue;
         };
@@ -260,6 +262,30 @@ fn chaine_pdf(s: &str) -> String {
         }
     }
     sortie
+}
+
+/// Les `%XX` d'une URI redeviennent les octets qu'ils codent (UTF-8 compris).
+fn decoder_uri(s: &str) -> String {
+    let octets = s.as_bytes();
+    let mut sortie = Vec::with_capacity(octets.len());
+    let mut i = 0;
+    while i < octets.len() {
+        let code = (octets[i] == b'%')
+            .then(|| s.get(i + 1..i + 3))
+            .flatten()
+            .and_then(|h| u8::from_str_radix(h, 16).ok());
+        match code {
+            Some(o) => {
+                sortie.push(o);
+                i += 3;
+            }
+            None => {
+                sortie.push(octets[i]);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&sortie).into_owned()
 }
 
 /// La première erreur que LilyPond signale, avec sa ligne si elle est dans le
@@ -319,6 +345,13 @@ mod tests {
         assert_eq!((l[0].ligne, l[0].colonne), (2, 13));
         assert_eq!(l[0].cadre, [0.25, 0.23, 0.275, 0.25]);
         assert!(liens(b"pas un pdf", Path::new("/r/Air.ly")).is_empty());
+
+        // Espaces et accents arrivent encodés.
+        let pdf = "<< /MediaBox [ 0 0 400 800 ] >>\n\
+            << /Rect [ 100 700 110 708 ]\n /A << /URI (textedit:///r/Mon%20recueil/Fant%C3%A9sie%202.ly:3:13:27) >> >>\n";
+        let l = liens(pdf.as_bytes(), Path::new("/r/Mon recueil/Fantésie 2.ly"));
+        assert_eq!(l.len(), 1);
+        assert_eq!(decoder_uri("a%2"), "a%2");
     }
 
     #[test]

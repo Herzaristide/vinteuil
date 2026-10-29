@@ -588,7 +588,6 @@ fn gestes(area: &gtk::DrawingArea, index: usize, etat: Weak<Etat>) {
                 .windows(2)
                 .map(|p| (p[1][0] - p[0][0]).hypot(p[1][1] - p[0][1]))
                 .sum();
-            eprintln!("DBG drag_end longueur={longueur}");
             if longueur >= TRACE_MIN {
                 // Annotées, les pages se montrent.
                 if !etat.visibles.get() {
@@ -671,12 +670,6 @@ pub fn bulle_texte(
     ));
     bulle.popup();
     entree.grab_focus();
-    eprintln!(
-        "DBG bulle visible={} mapped={} focus={}",
-        bulle.is_visible(),
-        bulle.is_mapped(),
-        entree.has_focus()
-    );
 }
 
 fn bulle(zone: &gtk::Widget, x: f64, y: f64, contenu: &impl IsA<gtk::Widget>) -> gtk::Popover {

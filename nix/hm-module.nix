@@ -1,5 +1,5 @@
 # Module Home Manager. Dans /etc/nixos :
-#   inputs.vinteuil.url = "path:/home/aristide/code/music";
+#   inputs.vinteuil.url = "github:Herzaristide/vinteuil";
 #   imports = [ inputs.vinteuil.homeManagerModules.default ];
 #   programs.vinteuil.enable = true;
 self:

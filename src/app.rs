@@ -62,10 +62,8 @@ pub enum Msg {
     /// Multiplie l'agrandissement ; `None` revient à 1.
     Zoom(Option<f64>),
     ToggleTheme,
-    /// Thème sombre (encre) ou clair (papier).
-    Sombre(bool),
-    /// Le thème suit celui du système, ou est choisi à la main.
-    SuivreSysteme(bool),
+    /// Sombre (encre), clair (papier), ou (`None`) comme le système.
+    Theme(Option<bool>),
     /// Le système est passé du clair au sombre, ou l'inverse.
     Systeme,
     /// Prendre, ou non, l'accent du bureau.
@@ -137,8 +135,7 @@ pub struct Widgets {
     left: gtk::Revealer,
     right: gtk::Revealer,
     reglages: gtk::Revealer,
-    auto: gtk::Switch,
-    sombre: gtk::Switch,
+    theme: adw::ToggleGroup,
     liste: gtk::ListBox,
 }
 
@@ -282,23 +279,28 @@ impl Component for App {
         );
 
         // Les réglages, au centre, du même papier que les panneaux.
-        let auto = gtk::Switch::builder().valign(gtk::Align::Center).build();
-        let sombre = gtk::Switch::builder().valign(gtk::Align::Center).build();
+        // Les noms des positions sont ceux de la configuration.
+        let theme = adw::ToggleGroup::builder()
+            .homogeneous(true)
+            .css_classes(["choix"])
+            .build();
+        for (nom, label) in [
+            ("auto", "Système"),
+            ("papier", "Clair"),
+            ("encre", "Sombre"),
+        ] {
+            theme.add(adw::Toggle::builder().name(nom).label(label).build());
+        }
         let suivre_accent = gtk::Switch::builder().valign(gtk::Align::Center).build();
         let reglages_box = panel_box(
             "Réglages",
             "S’appliquent aussitôt, et restent d’une séance à l’autre.",
         );
         reglages_box.set_width_request(380);
-        reglages_box.append(&reglage(
-            "Suivre le système",
-            "Clair ou sombre, comme le reste du bureau",
-            &auto,
-        ));
-        reglages_box.append(&reglage(
-            "Thème sombre",
-            "L’encre plutôt que le papier · Ctrl+T",
-            &sombre,
+        reglages_box.append(&reglage_dessous(
+            "Thème",
+            "Comme le bureau, le papier ou l’encre · Ctrl+T",
+            &theme,
         ));
         reglages_box.append(&reglage(
             "Accent du bureau",
@@ -374,8 +376,8 @@ impl Component for App {
             }
         ));
 
-        let theme = state.theme.clone().unwrap_or_else(|| config.theme.clone());
-        let choix = match theme.as_str() {
+        let voulu = state.theme.clone().unwrap_or_else(|| config.theme.clone());
+        let choix = match voulu.as_str() {
             "encre" => Some(true),
             "papier" => Some(false),
             _ => None,
@@ -412,19 +414,19 @@ impl Component for App {
         model.appliquer_accent(&partition);
 
         // Les interrupteurs partent de l'état actuel, puis seulement on les écoute.
-        auto.set_active(model.auto);
-        sombre.set_active(model.dark);
-        sombre.set_sensitive(!model.auto);
+        theme.set_active_name(Some(nom_theme(model.auto, model.dark)));
         suivre_accent.set_active(model.state.accent);
-        auto.connect_active_notify(glib::clone!(
+        theme.connect_active_name_notify(glib::clone!(
             #[strong]
             sender,
-            move |s| sender.input(Msg::SuivreSysteme(s.is_active()))
-        ));
-        sombre.connect_active_notify(glib::clone!(
-            #[strong]
-            sender,
-            move |s| sender.input(Msg::Sombre(s.is_active()))
+            move |g| {
+                let choix = match g.active_name().as_deref() {
+                    Some("encre") => Some(true),
+                    Some("papier") => Some(false),
+                    _ => None,
+                };
+                sender.input(Msg::Theme(choix))
+            }
         ));
         suivre_accent.connect_active_notify(glib::clone!(
             #[strong]
@@ -451,8 +453,7 @@ impl Component for App {
             left,
             right,
             reglages,
-            auto,
-            sombre,
+            theme,
             liste,
         };
 
@@ -505,7 +506,7 @@ impl Component for App {
                 let open = !w.reglages.reveals_child();
                 reveler(&w.reglages, open);
                 if open {
-                    w.auto.grab_focus();
+                    w.theme.grab_focus();
                 } else {
                     w.partition.grab_focus();
                 }
@@ -691,43 +692,22 @@ impl Component for App {
                     self.state.save();
                 }
             }
-            Msg::ToggleTheme => sender.input(Msg::Sombre(!self.dark)),
-            Msg::Sombre(dark) => {
-                // Ctrl+T aussi : l'interrupteur suit (sans boucle, la valeur est déjà la bonne).
-                w.sombre.set_active(dark);
-                if dark != self.dark {
-                    // Choisir à la main, c'est cesser de suivre le système.
-                    self.auto = false;
-                    w.auto.set_active(false);
-                    w.sombre.set_sensitive(true);
-                    self.changer_theme(w, root, Some(dark));
-                    self.state.theme = Some(if dark { "encre" } else { "papier" }.into());
-                    self.state.save();
-                }
-            }
-            Msg::SuivreSysteme(on) => {
-                if on != self.auto {
-                    self.auto = on;
-                    self.changer_theme(w, root, if on { None } else { Some(self.dark) });
-                    w.sombre.set_sensitive(!on);
-                    w.sombre.set_active(self.dark);
-                    self.state.theme = Some(
-                        if on {
-                            "auto"
-                        } else if self.dark {
-                            "encre"
-                        } else {
-                            "papier"
-                        }
-                        .into(),
-                    );
+            // Choisir à la main, c'est cesser de suivre le système.
+            Msg::ToggleTheme => sender.input(Msg::Theme(Some(!self.dark))),
+            Msg::Theme(choix) => {
+                let nom = nom_theme(choix.is_none(), choix.unwrap_or(self.dark));
+                // Ctrl+T aussi : le sélecteur suit (sans boucle, la valeur est déjà la bonne).
+                w.theme.set_active_name(Some(nom));
+                if choix.is_none() != self.auto || choix.is_some_and(|d| d != self.dark) {
+                    self.auto = choix.is_none();
+                    self.changer_theme(w, root, choix);
+                    self.state.theme = Some(nom.into());
                     self.state.save();
                 }
             }
             Msg::Systeme => {
                 if self.auto {
                     self.changer_theme(w, root, None);
-                    w.sombre.set_active(self.dark);
                 }
             }
             Msg::SuivreAccent(on) => {
@@ -750,7 +730,6 @@ impl Component for App {
                 dessous,
                 texte,
             } => {
-                eprintln!("DBG AnnoterNote {ligne} {colonne} {texte}");
                 let source = texte_de(&w.source);
                 match lilypond::annoter(&source, ligne, colonne, dessous, &texte) {
                     Some(editions) => self.editer(w, &sender, editions),
@@ -830,12 +809,6 @@ impl App {
 
     /// Un clic sur une note : un texte à y rattacher, au-dessus (en dessous avec `Maj`).
     fn annoter(&self, w: &Widgets, p: Pointe, sender: &ComponentSender<Self>) {
-        eprintln!(
-            "DBG annoter liens_a_jour={} liens={:?} cibles={:?}",
-            self.liens_a_jour,
-            p.liens,
-            self.cibles(w, &p)
-        );
         let Some((note, _)) = self
             .cibles(w, &p)
             .into_iter()
@@ -1098,6 +1071,15 @@ fn apply_theme(root: &adw::ApplicationWindow, choix: Option<bool>) -> bool {
     dark
 }
 
+/// Le nom du thème, dans la configuration comme dans le sélecteur.
+fn nom_theme(auto: bool, dark: bool) -> &'static str {
+    match (auto, dark) {
+        (true, _) => "auto",
+        (false, true) => "encre",
+        (false, false) => "papier",
+    }
+}
+
 fn morceau_row(m: &Morceau, current: bool) -> gtk::ListBoxRow {
     let label = gtk::Label::builder()
         .label(&m.titre)
@@ -1117,6 +1099,28 @@ fn morceau_row(m: &Morceau, current: bool) -> gtk::ListBoxRow {
 
 /// Une ligne de réglage : intitulé et explication à gauche, interrupteur à droite.
 fn reglage(titre: &str, detail: &str, interrupteur: &impl IsA<gtk::Widget>) -> gtk::Box {
+    let ligne = gtk::Box::builder()
+        .spacing(18)
+        .css_classes(["reglage"])
+        .build();
+    ligne.append(&intitule(titre, detail));
+    ligne.append(interrupteur);
+    ligne
+}
+
+/// Un réglage dont le choix, trop large pour la marge, passe dessous.
+fn reglage_dessous(titre: &str, detail: &str, choix: &impl IsA<gtk::Widget>) -> gtk::Box {
+    let bloc = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(12)
+        .css_classes(["reglage"])
+        .build();
+    bloc.append(&intitule(titre, detail));
+    bloc.append(choix);
+    bloc
+}
+
+fn intitule(titre: &str, detail: &str) -> gtk::Box {
     let textes = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
         .spacing(2)
@@ -1132,13 +1136,7 @@ fn reglage(titre: &str, detail: &str, interrupteur: &impl IsA<gtk::Widget>) -> g
             .css_classes(["dim-label", "caption"])
             .build(),
     );
-    let ligne = gtk::Box::builder()
-        .spacing(18)
-        .css_classes(["reglage"])
-        .build();
-    ligne.append(&textes);
-    ligne.append(interrupteur);
-    ligne
+    textes
 }
 
 fn panel_box(title: &str, subtitle: &str) -> gtk::Box {
@@ -1245,6 +1243,8 @@ window.papier list.morceaux row.courant {{ background-color: alpha({c}, 0.16); }
 window.encre  list.morceaux row.courant {{ background-color: alpha({s}, 0.16); }}
 window.papier .panneau switch:checked {{ background-color: {c}; }}
 window.encre  .panneau switch:checked {{ background-color: {s}; }}
+window.papier .panneau toggle-group.choix > toggle:checked {{ background-color: {c}; color: #f5f0e6; }}
+window.encre  .panneau toggle-group.choix > toggle:checked {{ background-color: {s}; color: #1b1a18; }}
 "#,
         c = a.clair,
         s = a.sombre,
@@ -1287,6 +1287,24 @@ list.morceaux row {{ border-radius: 8px; padding: 6px 8px; font-family: "{police
 window.papier .panneau .reglage + .reglage {{ border-top: 1px solid alpha({ENCRE_PAPIER}, 0.08); }}
 window.encre  .panneau .reglage + .reglage {{ border-top: 1px solid alpha({ENCRE_ENCRE}, 0.08); }}
 window.encre  .panneau switch:checked slider {{ background-color: #1b1a18; }}
+
+/* Le choix du thème : un rail discret, la position retenue à l'accent. */
+.panneau toggle-group.choix {{ padding: 3px; border-radius: 10px; border: none; box-shadow: none; }}
+window.papier .panneau toggle-group.choix {{ background-color: alpha({ENCRE_PAPIER}, 0.07); }}
+window.encre  .panneau toggle-group.choix {{ background-color: alpha({ENCRE_ENCRE}, 0.07); }}
+.panneau toggle-group.choix > separator {{ min-width: 0; background: none; }}
+.panneau toggle-group.choix > toggle {{
+    min-height: 30px;
+    padding: 0 12px;
+    border-radius: 7px;
+    background: none;
+    box-shadow: none;
+    color: inherit;
+    font-weight: normal;
+    transition: background-color 160ms ease, color 160ms ease;
+}}
+.panneau toggle-group.choix > toggle:hover:not(:checked) {{ background-color: alpha(currentColor, 0.07); }}
+.panneau toggle-group.choix > toggle:focus-visible {{ outline: 2px solid alpha(currentColor, 0.35); outline-offset: -2px; }}
 "#,
         police = config.police,
         source = config.police_source,
